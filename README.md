@@ -185,3 +185,17 @@ Each run directory includes:
   uman-readable summary, plus GOP and effective GOP estimates.
 - `bitwidth_percentages.txt`
   Bit-width distribution, channel-weighted and parameter-weighted.
+
+### Usage guidelines ###
+
+* Kindly cite our publication if you use any part of the code
+```
+@article{woergaard2026fairquant,
+  title={FairQuant: Fairness-Aware Mixed-Precision Quantization for Medical Image Classification},
+  author={Thomas Woergaard and Raghavendra Selvan},
+  journal={Arxiv},
+  note={arXiv preprint arXiv:2602.23192},
+  year={2026}}
+```
+
+
