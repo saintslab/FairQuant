@@ -1,5 +1,7 @@
 # FairQuant
 
+Official source-code for [Woergaard and Selvan (2026)](https://arxiv.org/abs/2602.23192). 
+
 Codebase for **fairness-aware mixed-precision quantization** of image classifiers.
 
 The main script (`train.py`) supports:
