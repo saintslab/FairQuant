@@ -160,12 +160,24 @@ def _celeba_loaders(
         ]
     )
 
-    train_base = torchvision.datasets.CelebA(
-        root=data_root, split="train", target_type="attr", transform=train_transform, download=True
-    )
-    test_base = torchvision.datasets.CelebA(
-        root=data_root, split="test", target_type="attr", transform=test_transform, download=True
-    )
+    try:
+        train_base = torchvision.datasets.CelebA(
+            root=data_root, split="train", target_type="attr", transform=train_transform, download=False
+        )
+        test_base = torchvision.datasets.CelebA(
+            root=data_root, split="test", target_type="attr", transform=test_transform, download=False
+        )
+    except Exception as e:
+        raise RuntimeError(
+            "Automatic CelebA download failed. Torchvision fetches CelebA from Google Drive, which "
+            "frequently rate-limits or quota-blocks automated downloads (this is a known, longstanding "
+            "issue unrelated to this codebase). "
+            f"Please download CelebA manually and place it under '{os.path.join(data_root, 'celeba')}' "
+            "using the standard torchvision layout: img_align_celeba/, list_attr_celeba.txt, "
+            "list_eval_partition.txt, list_bbox_celeba.txt, list_landmarks_align_celeba.txt, "
+            "identity_CelebA.txt. Official source: https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html . "
+            f"Once the files are in place, re-run with the same --data_root. Original error: {e}"
+        ) from e
 
     try:
         target_attr_idx = train_base.attr_names.index(target_attribute)
