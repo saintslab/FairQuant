@@ -205,6 +205,33 @@ Each run directory includes:
 - `bitwidth_percentages.txt`
   Bit-width distribution, channel-weighted and parameter-weighted.
 
+## Comparing runs (plot_radar.py)
+
+`plot_radar.py` scans `results/` and plots a radar chart trading off accuracy, fairness, and
+quantization efficiency across runs — one chart per dataset (accuracy scales aren't comparable
+across datasets). For each run it reads the final (or, if a run is still in progress, the most
+recently logged) evaluation block from `training.log`, plus `size_report.txt` for BOPs/bit-width
+stats, and prints a raw-value summary table before plotting.
+
+```bash
+python plot_radar.py                              # one radar per dataset found in results/
+python plot_radar.py --dataset fitzpatrick17k      # restrict to one dataset
+python plot_radar.py --include baseline            # only run dirs whose name contains a substring
+python plot_radar.py --exclude smoketest           # drop run dirs matching a substring
+python plot_radar.py --results-dir results --out-dir results
+```
+
+Radar axes (all oriented "higher is better"):
+
+- **Accuracy** — `avg_acc`
+- **Fairness** — `1 - mean(EOpp1, EOpp0, EOdd)`
+- **BOPs Efficiency** — effective-GOPs compute reduction %
+- **Bit-width Efficiency** — `1 - avg_bits/32`
+
+Runs missing size/BOPs data (e.g. still training) are skipped from the chart with a `[warn]`
+rather than plotted as zero. Output is saved to `--out-dir` (default `results/`) as
+`radar_<dataset>.png`.
+
 ### Usage guidelines ###
 
 * Kindly cite our publication if you use any part of the code
