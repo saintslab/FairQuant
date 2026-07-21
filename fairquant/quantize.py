@@ -126,6 +126,67 @@ def compute_groupwise_importance_grape(
         if g not in importance: importance[g] = _zero_like_params(model)
     return importance
 
+def compute_groupwise_importance_hawq(
+    model: nn.Module, dataloader: torch.utils.data.DataLoader, device: torch.device,
+    num_groups: int, criterion: nn.Module, calib_batches: int = 50, use_sensitive_groups: bool = False,
+    hutchinson_samples: int = 1
+) -> Dict[int, Dict[str, torch.Tensor]]:
+    """Computes group-wise importance using a HAWQ-style Hessian sensitivity metric.
+
+    Estimates the per-parameter Hessian diagonal via the Hutchinson trace estimator
+    (E[v * Hv] = diag(H) for Rademacher v) and combines it with weight magnitude to
+    form the classical second-order saliency s = |diag(H)| * w^2, i.e. the local
+    quadratic loss-perturbation from removing/quantizing that weight (Optimal Brain
+    Damage / HAWQ's per-layer sensitivity, applied here at the requested granularity).
+    """
+    model.train()
+    importance: Dict[int, Dict[str, torch.Tensor]] = {}
+    seen_count = 0
+    total_samples_to_see = calib_batches * dataloader.batch_size if dataloader.batch_size else calib_batches * 128
+    target_modules = [(name, m) for name, m in _iter_target_named_modules(model) if m.weight.requires_grad]
+    names = [name for name, _ in target_modules]
+
+    for batch in dataloader:
+        if len(batch) == 3:
+            images, targets, sensitive_attrs = batch
+        else:
+            images, targets = batch
+            if use_sensitive_groups:
+                logging.warning("Expected sensitive groups but dataloader did not provide them. Skipping batch.")
+                continue
+
+        images, targets = images.to(device), targets.to(device)
+        group_tensor = sensitive_attrs.to(device) if use_sensitive_groups else targets
+        loop_over_groups = torch.unique(group_tensor).tolist()
+
+        for g in loop_over_groups:
+            if g not in importance: importance[g] = _zero_like_params(model)
+
+        logits = model(images)
+        params = [m.weight for _, m in target_modules]
+        for j, g in enumerate(loop_over_groups):
+            mask = (group_tensor == g)
+            if mask.sum().item() == 0: continue
+            loss = criterion(logits[mask], targets[mask])
+
+            for s in range(hutchinson_samples):
+                is_last = (j == len(loop_over_groups) - 1) and (s == hutchinson_samples - 1)
+                first_grads = torch.autograd.grad(loss, params, create_graph=True, retain_graph=True)
+                vs = [torch.empty_like(p).bernoulli_(0.5).mul_(2).sub_(1) for p in params]
+                gv = torch.stack([(fg * v).sum() for fg, v in zip(first_grads, vs)]).sum()
+                hvps = torch.autograd.grad(gv, params, retain_graph=not is_last)
+
+                for name, p, v, hv in zip(names, params, vs, hvps):
+                    diag_est = (v * hv).detach().abs()
+                    importance[g][name].add_(diag_est * p.detach().pow(2))
+
+        seen_count += images.size(0)
+        if seen_count >= total_samples_to_see: break
+
+    for g in range(num_groups):
+        if g not in importance: importance[g] = _zero_like_params(model)
+    return importance
+
 def reduce_across_groups(
     importance_by_group: Dict[int, Dict[str, torch.Tensor]], reducer: str = "max", cvar_alpha: float = 0.1
 ) -> Dict[str, torch.Tensor]:

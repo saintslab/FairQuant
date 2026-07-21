@@ -15,6 +15,7 @@ import numpy as np
 from copy import deepcopy
 import torch.nn.functional as F
 from dataclasses import dataclass
+from functools import partial
 import logging
 
 from fairquant.datasets import get_dataloaders
@@ -22,6 +23,7 @@ from fairquant.models import get_model
 from fairquant.quantize import (
     compute_groupwise_importance,
     compute_groupwise_importance_grape,
+    compute_groupwise_importance_hawq,
     reduce_across_groups,
     assign_bits,
     apply_weight_quantization,
@@ -38,6 +40,11 @@ from fairquant.quantize import (
 )
 from fairquant.utils import set_seed, summarize_fairness
 
+
+def get_importance_func(args):
+    if args.importance_metric == 'grape': return compute_groupwise_importance_grape
+    if args.importance_metric == 'hawq': return partial(compute_groupwise_importance_hawq, hutchinson_samples=args.hawq_hutchinson_samples)
+    return compute_groupwise_importance
 
 def write_bit_report(model, output_dir, bops_map):
     from fairquant.quantize import collect_bit_distribution
@@ -204,7 +211,8 @@ def main():
     parser.add_argument("--quant_mode", type=str, choices=["none", "uniform", "fair_static", "fair_static_qat", "baq_learnable"], default="fair_static")
     parser.add_argument("--granularity", type=str, choices=["per_channel", "per_tensor", "per_param"], default="per_channel")
     parser.add_argument("--importance_on_sensitive_groups", action="store_true", help="Calculate importance on sensitive groups instead of target classes.")
-    parser.add_argument("--importance_metric", type=str, choices=["gradient", "grape"], default="gradient", help="The metric for importance calculation ('grape' is from FairGRAPE paper).")
+    parser.add_argument("--importance_metric", type=str, choices=["gradient", "grape", "hawq"], default="gradient", help="The metric for importance calculation ('grape' is from FairGRAPE paper, 'hawq' is a Hutchinson Hessian-trace sensitivity metric).")
+    parser.add_argument("--hawq_hutchinson_samples", type=int, default=1, help="Number of Hutchinson trace-estimator samples per batch for the 'hawq' importance metric.")
     parser.add_argument("--quant_levels", type=float, nargs="+", default=[0.5, 0.4, 0.1])
     parser.add_argument("--quant_bits", type=int, nargs="+", default=[4, 8, 16], help="Bit widths to assign. Use '0' to enable pruning.")
     parser.add_argument("--uniform_bit", type=int, default=8)
@@ -293,7 +301,7 @@ def main():
     elif args.quant_mode in ("fair_static", "fair_static_qat"):
         use_sensitive = args.importance_on_sensitive_groups and args.dataset != "celeba"
         groups_for_importance = num_groups if use_sensitive else num_classes
-        importance_func = compute_groupwise_importance_grape if args.importance_metric == 'grape' else compute_groupwise_importance
+        importance_func = get_importance_func(args)
 
         if args.iterative_qat and args.quant_mode == 'fair_static_qat':
             logging.info(f"STARTING ITERATIVE QAT: {args.iterations} iterations, {args.ft_epochs} fine-tuning epochs per iteration.")
@@ -413,7 +421,7 @@ def main():
         logging.info("Calculating group-wise importance to initialize BAQ bit-widths...")
         use_sensitive = args.importance_on_sensitive_groups and args.dataset != "celeba"
         groups_for_importance = num_groups if use_sensitive else num_classes
-        importance_func = compute_groupwise_importance_grape if args.importance_metric == 'grape' else compute_groupwise_importance
+        importance_func = get_importance_func(args)
 
         importance_by_group = importance_func(model, train_loader, device, groups_for_importance, criterion, args.calib_batches, use_sensitive)
         reduced_importance = reduce_across_groups(importance_by_group, reducer=args.reducer, cvar_alpha=args.cvar_alpha)
