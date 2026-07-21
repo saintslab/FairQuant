@@ -70,6 +70,15 @@ All datasets are loaded via `fairquant/datasets.py`.
 - **ISIC 2019** (`--dataset isic2019`)
   Auto-downloads a prepared archive into `./data/ISIC2019_train/` if missing.
   Groups are `UNK`, `female`, `male` (from metadata).
+- **CelebA** (`--dataset celeba`)
+  Binary classification/fairness task over CelebA face attributes.
+  `--target_attribute` (default `Blond_Hair`) selects the classification label; `--sensitive_attribute`
+  (default `Male`) selects the group attribute — both must be valid CelebA attribute names.
+  Attempts to auto-download via `torchvision.datasets.CelebA` into `./data/celeba/`, but the official
+  host is Google Drive, which commonly rate-limits automated downloads. If that happens, download CelebA
+  manually (https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) and place it under `./data/celeba/` using
+  torchvision's standard layout (`img_align_celeba/`, `list_attr_celeba.txt`, `list_eval_partition.txt`,
+  `list_bbox_celeba.txt`, `list_landmarks_align_celeba.txt`, `identity_CelebA.txt`), then re-run.
 
 ## Models
 
@@ -127,6 +136,14 @@ Starts from an importance-based initialization, then learns bits during fine-tun
 
 ```bash
 python train.py   --dataset fitzpatrick17k   --model resnet18   --checkpoint_path ./checkpoints/resnet18_fitzpatrick17k_pretrained.pt   --quant_mode baq_learnable   --granularity per_channel   --importance_on_sensitive_groups   --importance_metric gradient   --reducer max   --quant_bits 2 4 8 16   --quant_levels 0.25 0.25 0.25 0.25   --baq_bit_min 4   --baq_bit_max 16   --baq_lambda_b 1e-5   --fairness_loss_lambda 0.5   --ft_epochs 5
+```
+
+#### Running on CelebA
+
+Same flags as any other dataset — just switch `--dataset` and pick a target/sensitive attribute pair. Without `--checkpoint_path`, `train.py` runs `--epochs` of initial full-precision training first.
+
+```bash
+python train.py   --dataset celeba   --model resnet18   --target_attribute Blond_Hair   --sensitive_attribute Male   --epochs 5   --quant_mode fair_static_qat   --granularity per_channel   --importance_on_sensitive_groups   --importance_metric gradient   --reducer max   --quant_bits 2 4 8   --quant_levels 0.2 0.4 0.4   --ft_epochs 5
 ```
 
 ## Key CLI arguments (train.py)
