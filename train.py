@@ -220,7 +220,7 @@ def main():
     parser.add_argument("--beta", type=float, default=1.0, help="Beta value for the 'subtractive' reducer.")
     parser.add_argument("--cvar_alpha", type=float, default=0.1)
     parser.add_argument("--calib_batches", type=int, default=50)
-    parser.add_argument("--ft_epochs", type=int, default=1)
+    parser.add_argument("--ft_epochs", type=int, default=0)
     parser.add_argument("--fairness_loss_lambda", type=float, default=0.0)
     parser.add_argument("--iterative_qat", action="store_true", help="If set, performs iterative QAT where a small portion of the model is quantized and retrained in a loop.")
     parser.add_argument("--iterations", type=int, default=5, help="Number of iterations for iterative QAT.")
