@@ -1,13 +1,15 @@
 import argparse
+import copy
 import os
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
+from torch.utils.data import DataLoader, random_split
 
 from fairquant.datasets import get_dataloaders
 from fairquant.models import get_model
 from fairquant.utils import set_seed
-from train import train_one_epoch, evaluate 
+from train import train_one_epoch, evaluate
 
 
 def main():
@@ -38,6 +40,10 @@ def main():
     parser.add_argument("--train_subset", type=float, default=None)
     parser.add_argument("--test_subset", type=float, default=None)
     parser.add_argument("--positive_class", type=int, default=None)
+    parser.add_argument("--val_fraction", type=float, default=0.1,
+                         help="Fraction of the training set held out for early-stopping validation.")
+    parser.add_argument("--patience", type=int, default=10,
+                         help="Stop if held-out validation loss doesn't improve for this many epochs.")
     args = parser.parse_args()
     set_seed(42)
     device = torch.device(args.device)
@@ -59,26 +65,58 @@ def main():
     )
 
 
+    pin_memory = torch.cuda.is_available()
+    full_train_ds = train_loader.dataset
+    n_val = max(1, int(len(full_train_ds) * args.val_fraction))
+    n_train = len(full_train_ds) - n_val
+    train_ds, early_stop_val_ds = random_split(
+        full_train_ds, [n_train, n_val], generator=torch.Generator().manual_seed(42)
+    )
+    train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=pin_memory)
+    early_stop_val_loader = DataLoader(early_stop_val_ds, args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=pin_memory)
+
     model = get_model(args.model, num_classes=num_classes, pretrained=True).to(device)
-    
+
     criterion = nn.CrossEntropyLoss()
-    optimizer = AdamW(model.parameters(), lr=args.lr) 
+    optimizer = AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=160, gamma=0.1)
-    
-    print(f"Starting pre-training for {args.epochs} epochs on dataset {args.dataset} (FairPrune setup)...")
+
+    best_val_loss = float("inf")
+    best_state = None
+    epochs_without_improvement = 0
+
+    print(
+        f"Starting pre-training for up to {args.epochs} epochs on dataset {args.dataset} (FairPrune setup)... "
+        f"[{n_train} train / {n_val} early-stopping val samples, patience={args.patience}]"
+    )
     for epoch in range(args.epochs):
         train_loss = train_one_epoch(model, train_loader, device, criterion, optimizer)
-        
-        val_loss, val_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
-        
+
+        es_val_loss, _ = evaluate(model, early_stop_val_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
+        test_loss, val_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
+
         print(
             f"[epoch {epoch+1}/{args.epochs}] train_loss={train_loss:.4f} "
-            f"val_loss={val_loss:.4f} avg_acc={val_groups['overall']['avg_acc']:.3f} "
+            f"es_val_loss={es_val_loss:.4f} test_loss={test_loss:.4f} avg_acc={val_groups['overall']['avg_acc']:.3f} "
             f"worst_acc={val_groups['overall']['worst_acc']:.3f} acc_gap={val_groups['overall']['acc_gap']:.3f}"
         )
-        
-        scheduler.step() 
-        
+
+        scheduler.step()
+
+        if es_val_loss < best_val_loss:
+            best_val_loss = es_val_loss
+            best_state = copy.deepcopy(model.state_dict())
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= args.patience:
+                print(f"Early stopping at epoch {epoch+1}: no improvement in es_val_loss for {args.patience} epochs.")
+                break
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        print(f"Restored best model checkpoint (es_val_loss={best_val_loss:.4f}).")
+
     output_dir = "./checkpoints"
     os.makedirs(output_dir, exist_ok=True)
 
