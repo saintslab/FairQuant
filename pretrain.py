@@ -73,7 +73,7 @@ def main():
         full_train_ds, [n_train, n_val], generator=torch.Generator().manual_seed(42)
     )
     train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=pin_memory)
-    early_stop_val_loader = DataLoader(early_stop_val_ds, args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=pin_memory)
+    val_loader = DataLoader(early_stop_val_ds, args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=pin_memory)
 
     model = get_model(args.model, num_classes=num_classes, pretrained=True).to(device)
 
@@ -81,7 +81,7 @@ def main():
     optimizer = AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=160, gamma=0.1)
 
-    best_val_loss = float("inf")
+    best_val_acc = -float("inf")
     best_state = None
     epochs_without_improvement = 0
 
@@ -92,30 +92,36 @@ def main():
     for epoch in range(args.epochs):
         train_loss = train_one_epoch(model, train_loader, device, criterion, optimizer)
 
-        es_val_loss, _ = evaluate(model, early_stop_val_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
-        test_loss, val_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
+        val_loss, val_groups = evaluate(model, val_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
+        val_acc = val_groups['overall']['avg_acc']
 
         print(
             f"[epoch {epoch+1}/{args.epochs}] train_loss={train_loss:.4f} "
-            f"es_val_loss={es_val_loss:.4f} test_loss={test_loss:.4f} avg_acc={val_groups['overall']['avg_acc']:.3f} "
-            f"worst_acc={val_groups['overall']['worst_acc']:.3f} acc_gap={val_groups['overall']['acc_gap']:.3f}"
+            f"val_loss={val_loss:.4f} val_acc={val_acc:.3f} "
+            f"val_worst_acc={val_groups['overall']['worst_acc']:.3f} val_acc_gap={val_groups['overall']['acc_gap']:.3f}"
         )
 
         scheduler.step()
 
-        if es_val_loss < best_val_loss:
-            best_val_loss = es_val_loss
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= args.patience:
-                print(f"Early stopping at epoch {epoch+1}: no improvement in es_val_loss for {args.patience} epochs.")
+                print(f"Early stopping at epoch {epoch+1}: no improvement in val_acc for {args.patience} epochs.")
                 break
 
     if best_state is not None:
         model.load_state_dict(best_state)
-        print(f"Restored best model checkpoint (es_val_loss={best_val_loss:.4f}).")
+        print(f"Restored best model checkpoint (val_acc={best_val_acc:.3f}).")
+
+    test_loss, test_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, compute_parity_gaps=False)
+    print(
+        f"\n[FINAL TEST @ convergence] test_loss={test_loss:.4f} avg_acc={test_groups['overall']['avg_acc']:.3f} "
+        f"worst_acc={test_groups['overall']['worst_acc']:.3f} acc_gap={test_groups['overall']['acc_gap']:.3f}"
+    )
 
     output_dir = "./checkpoints"
     os.makedirs(output_dir, exist_ok=True)
