@@ -1,7 +1,5 @@
 # FairQuant
 
-Official source-code for [Woergaard and Selvan (2026)](https://arxiv.org/abs/2602.23192). 
-
 Codebase for **fairness-aware mixed-precision quantization** of image classifiers.
 
 The main script (`train.py`) supports:
@@ -231,17 +229,5 @@ Radar axes (all oriented "higher is better"):
 Runs missing size/BOPs data (e.g. still training) are skipped from the chart with a `[warn]`
 rather than plotted as zero. Output is saved to `--out-dir` (default `results/`) as
 `radar_<dataset>.png`.
-
-### Usage guidelines ###
-
-* Kindly cite our publication if you use any part of the code
-```
-@article{woergaard2026fairquant,
-  title={FairQuant: Fairness-Aware Mixed-Precision Quantization for Medical Image Classification},
-  author={Thomas Woergaard and Raghavendra Selvan},
-  journal={Arxiv},
-  note={arXiv preprint arXiv:2602.23192},
-  year={2026}}
-```
 
 
