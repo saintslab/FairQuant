@@ -28,7 +28,7 @@ def main():
         help="Model name. Supports torchvision and timm models (e.g., tiny_vit_5m_224)."
     )
     parser.add_argument("--epochs", type=int, default=200, help="")
-    parser.add_argument("--batch_size", type=int, default=256, help="")
+    parser.add_argument("--batch_size", type=int, default=128, help="")
     parser.add_argument("--lr", type=float, default=1e-4, help="")
     parser.add_argument("--image_size", type=int, default=224, help="")
     parser.add_argument("--num_workers", type=int, default=0)
