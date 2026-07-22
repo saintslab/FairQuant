@@ -278,6 +278,16 @@ def main():
             log_evaluation_details(val_groups, group_names, args.positive_class, val_loss)
 
     if args.quant_mode == "none":
+        if args.ft_epochs > 0:
+            logging.info(f"Fine-tuning full-precision baseline for {args.ft_epochs} epochs.")
+            ft_lr = args.ft_lr if args.ft_lr is not None else args.lr
+            optimizer = AdamW(model.parameters(), lr=ft_lr * 0.1)
+            for epoch in range(args.ft_epochs):
+                train_one_epoch(model, train_loader, device, criterion, optimizer)
+                val_loss, val_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, not args.no_parity_gaps)
+                logging.info(f"\n--- [FP32 FT Epoch {epoch+1}/{args.ft_epochs}] ---")
+                log_evaluation_details(val_groups, group_names, args.positive_class, val_loss)
+
         final_loss, final_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, not args.no_parity_gaps)
         logging.info(f"\n--- [FINAL RESULTS: Baseline (none)] ---")
         log_evaluation_details(final_groups, group_names, args.positive_class, final_loss)
