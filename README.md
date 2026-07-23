@@ -133,7 +133,7 @@ python train.py   --dataset fitzpatrick17k   --model resnet18   --checkpoint_pat
 Starts from an importance-based initialization, then learns bits during fine-tuning. BAQ logits use a higher learning rate than base weights.
 
 ```bash
-python train.py   --dataset fitzpatrick17k   --model resnet18   --checkpoint_path ./checkpoints/resnet18_fitzpatrick17k_pretrained.pt   --quant_mode baq_learnable   --granularity per_channel   --importance_on_sensitive_groups   --importance_metric gradient   --reducer max   --quant_bits 2 4 8 16   --quant_levels 0.25 0.25 0.25 0.25   --baq_bit_min 4   --baq_bit_max 16   --baq_lambda_b 1e-5   --fairness_loss_lambda 0.5   --ft_epochs 5
+python train.py   --dataset fitzpatrick17k   --model resnet18   --checkpoint_path ./checkpoints/resnet18_fitzpatrick17k_pretrained.pt   --quant_mode baq_learnable   --granularity per_channel   --importance_on_sensitive_groups   --importance_metric gradient   --reducer max   --quant_bits 2 4 8 16   --quant_levels 0.25 0.25 0.25 0.25   --baq_bit_min 4   --baq_bit_max 16   --baq_lambda_b 1e-2   --fairness_loss_lambda 0.5   --ft_epochs 5
 ```
 
 #### Running on CelebA
