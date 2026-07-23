@@ -64,6 +64,7 @@ def write_bit_report(model, output_dir, bops_map):
             f"(baseline {totals['baseline_size_mb']:.2f} MB) "
             f"reduction {totals['reduction_pct']:.1f}%\n"
         )
+        f.write(f"AVG BITS (param-weighted): {totals['avg_bits_model']:.3f}\n")
         # +++ ADDED: BOPs Reporting +++
         f.write(
             f"TOTAL GOPs: {totals['total_gops']:.2f} | "
@@ -74,6 +75,7 @@ def write_bit_report(model, output_dir, bops_map):
         f"[bit-report] saved reports to {output_dir}; "
         f"total size {totals['model_size_mb']:.2f} MB, "
         f"reduction {totals['reduction_pct']:.1f}%, "
+        f"avg_bits={totals['avg_bits_model']:.3f}, "
         f"Effective GOPs: {totals['total_effective_gops']:.2f}"
     )
 
@@ -213,7 +215,7 @@ def main():
     parser.add_argument("--importance_on_sensitive_groups", action="store_true", help="Calculate importance on sensitive groups instead of target classes.")
     parser.add_argument("--importance_metric", type=str, choices=["gradient", "grape", "hawq"], default="gradient", help="The metric for importance calculation ('grape' is from FairGRAPE paper, 'hawq' is a Hutchinson Hessian-trace sensitivity metric).")
     parser.add_argument("--hawq_hutchinson_samples", type=int, default=1, help="Number of Hutchinson trace-estimator samples per batch for the 'hawq' importance metric.")
-    parser.add_argument("--quant_levels", type=float, nargs="+", default=[0.5, 0.4, 0.1])
+    parser.add_argument("--quant_levels", type=float, nargs="+", default=None, help="Fraction of weights assigned to each bit-width in '--quant_bits'. If omitted, splits uniformly across the given bit-widths.")
     parser.add_argument("--quant_bits", type=int, nargs="+", default=[4, 8, 16], help="Bit widths to assign. Use '0' to enable pruning.")
     parser.add_argument("--uniform_bit", type=int, default=8)
     parser.add_argument("--reducer", type=str, choices=["max", "mean", "cvar", "subtractive", "balanced"], default="max")
@@ -233,6 +235,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for independent runs.")
     
     args = parser.parse_args()
+
+    if args.quant_levels is None:
+        args.quant_levels = [1.0 / len(args.quant_bits)] * len(args.quant_bits)
 
     print(f"Setting random seed to: {args.seed}")
     set_seed(args.seed)
@@ -483,7 +488,7 @@ def main():
                     total_loss += args.baq_lambda_d * d_reg_loss
 
                 if args.baq_lambda_b > 0 and b_logits:
-                    b_reg_loss = torch.stack([p.pow(2).sum() for p in b_logits]).sum()
+                    b_reg_loss = torch.cat([p.pow(2).flatten() for p in b_logits]).mean()
                     total_loss += args.baq_lambda_b * b_reg_loss
             
 

@@ -435,8 +435,10 @@ class BAQModule(nn.Module):
             
             if self.bit_max > self.bit_min:
                 val_for_atanh = (initial_bit_tensor - self.bit_min) / (self.bit_max - self.bit_min)
-                val_for_atanh = torch.clamp(val_for_atanh, max=0.9999)
-                
+                # Keep away from +/-1: atanh blows up and tanh's gradient vanishes near there,
+                # which would freeze b_logit at init instead of letting it keep learning.
+                val_for_atanh = torch.clamp(val_for_atanh, min=-0.95, max=0.95)
+
                 with torch.no_grad():
                     self.b_logit.copy_(torch.atanh(val_for_atanh))
 
@@ -607,6 +609,7 @@ def collect_bit_distribution(model: nn.Module, bops_map: Dict[str, float]):
         "reduction_pct": 100.0 * (1.0 - (total_bits / max(1, total_params_fp32_bits))),
         "total_gops": total_bops / 1e9,
         "total_effective_gops": total_effective_bops / 1e9,
+        "avg_bits_model": float(total_bits / max(1, total_params)),
     }
     return layer_rows, totals
 
