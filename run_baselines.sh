@@ -78,8 +78,8 @@ done
 for seed in "${SEEDS[@]}"; do
     run "${COMMON[@]}" --quant_mode baq_learnable \
         --importance_metric gradient --reducer max --importance_on_sensitive_groups \
-        --quant_bits 2 4 6 8 --quant_levels 0.25 0.25 0.25 0.25 \
-        --baq_bit_min 2 --baq_bit_max 8 --baq_lambda_b 1e-2 --fairness_loss_lambda 0.5 \
+        --quant_bits 4 5 6 7 8 \
+        --baq_bit_min 4 --baq_bit_max 8 --baq_lambda_b 1e-2 --fairness_loss_lambda 0.5 \
         --ft_epochs "$FT_EPOCHS" --seed "$seed" --run_name "${PREFIX}_fq_baq_seed${seed}"
 done
 
