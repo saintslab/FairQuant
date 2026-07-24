@@ -229,6 +229,7 @@ def main():
     parser.add_argument("--grad_clip_norm", type=float, default=1.0, help="Maximum norm for gradient clipping to prevent exploding gradients.")
     parser.add_argument("--ft_lr", type=float, default=None, help="Separate learning rate for the fine-tuning stage. If None, uses the main 'lr'.")
     parser.add_argument("--run_name", type=str, default=None, help="Optional, unique name for the run to organize results.")
+    parser.add_argument("--save_final_model", action="store_true", help="If set, saves the final model state_dict to the output directory.")
     parser.add_argument("--baq_bit_min", type=int, default=2, help="Minimum bit-width for BAQ learnable bits.")
     parser.add_argument("--baq_bit_max", type=int, default=16, help="Maximum bit-width for BAQ learnable bits.")
     parser.add_argument("--baq_lambda_b", type=float, default=0.0, help="L2 regularization lambda for the bit-width logits")
@@ -522,9 +523,10 @@ def main():
         f.write("FairQuant Run Arguments\n" + "="*30 + "\n")
         for key, value in vars(args).items(): f.write(f"{key}: {value}\n")
     
-    final_model_path = os.path.join(output_dir, "final_model.pt")
-    torch.save(model.state_dict(), final_model_path)
-    logging.info(f"Saved final model to: {final_model_path}")
+    if args.save_final_model:
+        final_model_path = os.path.join(output_dir, "final_model.pt")
+        torch.save(model.state_dict(), final_model_path)
+        logging.info(f"Saved final model to: {final_model_path}")
     logging.info(f"Saved final report to: {report_path}")
     logging.info(f"All results for this run are saved in: {output_dir}")
 
