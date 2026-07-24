@@ -190,8 +190,8 @@ def evaluate(model, loader, device, num_groups: int, num_classes: int, positive_
 def main():
     parser = argparse.ArgumentParser(description="FairQuant: Fairness-Aware Quantization")
     parser.add_argument("--dataset", type=str, default="fitzpatrick17k", choices=["celeba", "fitzpatrick17k", "isic2019", "fairface"])
-    parser.add_argument("--target_attribute", type=str, default="Blond_Hair", help="The target attribute for CelebA classification, or 'age'/'gender' for FairFace.")
-    parser.add_argument("--sensitive_attribute", type=str, default="Male", help="The sensitive attribute for CelebA fairness analysis, or 'race' for FairFace.")
+    parser.add_argument("--target_attribute", type=str, default=None, help="The target attribute for CelebA/FairFace classification. Defaults to 'Blond_Hair' for CelebA, 'age' for FairFace.")
+    parser.add_argument("--sensitive_attribute", type=str, default=None, help="The sensitive attribute for CelebA/FairFace fairness analysis. Defaults to 'Male' for CelebA, 'race' for FairFace.")
     parser.add_argument("--fitzpatrick_binary_grouping", action="store_true", help="If set, groups Fitzpatrick17k into light (1-3) and dark (4-6) skin tones.")
     parser.add_argument("--data_root", type=str, default="./data")
     parser.add_argument(
@@ -240,6 +240,13 @@ def main():
 
     if args.quant_levels is None:
         args.quant_levels = [1.0 / len(args.quant_bits)] * len(args.quant_bits)
+
+    _DEFAULT_TARGET_ATTR = {"celeba": "Blond_Hair", "fairface": "age"}
+    _DEFAULT_SENSITIVE_ATTR = {"celeba": "Male", "fairface": "race"}
+    if args.target_attribute is None:
+        args.target_attribute = _DEFAULT_TARGET_ATTR.get(args.dataset)
+    if args.sensitive_attribute is None:
+        args.sensitive_attribute = _DEFAULT_SENSITIVE_ATTR.get(args.dataset)
 
     print(f"Setting random seed to: {args.seed}")
     set_seed(args.seed)
