@@ -2,7 +2,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torchvision.models as tvm
-
+# Timm models: 
+# hiera_base_224.mae_in1k_ft_in1k
+# convnextv2_base.fcmae_ft_in22k_in1k
 # Try to import timm
 try:
     import timm

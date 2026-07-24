@@ -65,6 +65,7 @@ def write_bit_report(model, output_dir, bops_map):
             f"reduction {totals['reduction_pct']:.1f}%\n"
         )
         f.write(f"AVG BITS (param-weighted): {totals['avg_bits_model']:.3f}\n")
+        f.write(f"AVG BITS (channel-weighted): {totals['avg_bits_channel']:.3f}\n")
         # +++ ADDED: BOPs Reporting +++
         f.write(
             f"TOTAL GOPs: {totals['total_gops']:.2f} | "
@@ -75,7 +76,7 @@ def write_bit_report(model, output_dir, bops_map):
         f"[bit-report] saved reports to {output_dir}; "
         f"total size {totals['model_size_mb']:.2f} MB, "
         f"reduction {totals['reduction_pct']:.1f}%, "
-        f"avg_bits={totals['avg_bits_model']:.3f}, "
+        f"avg_bits={totals['avg_bits_model']:.3f} (channel-weighted {totals['avg_bits_channel']:.3f}), "
         f"Effective GOPs: {totals['total_effective_gops']:.2f}"
     )
 

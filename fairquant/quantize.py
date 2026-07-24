@@ -561,18 +561,19 @@ def bitwidth_percentages(model: nn.Module, weighting: str = "params"):
 def collect_bit_distribution(model: nn.Module, bops_map: Dict[str, float]):
     layer_rows, total_params, total_bits, total_params_fp32_bits = [], 0, 0, 0
     total_bops, total_effective_bops = 0.0, 0.0
+    total_channels, total_bits_channels = 0, 0.0
     processed_modules = set()
 
     for name, m in model.named_modules():
         if id(m) in processed_modules: continue
-        
+
         is_quantized = isinstance(m, (QuantizedModule, BAQModule))
         base_module = m.base if is_quantized else m
-        
+
         if isinstance(base_module, (nn.Conv2d, nn.Linear)):
             w = base_module.weight
             params = w.numel()
-            
+
             bops = bops_map.get(name, 0.0)
             total_bops += bops
 
@@ -582,9 +583,11 @@ def collect_bit_distribution(model: nn.Module, bops_map: Dict[str, float]):
                 bits_vec = bits_vec.view(-1)
                 unique, counts = torch.unique(bits_vec, return_counts=True)
                 hist, avg_bits = {int(u.item()): int(c.item()) for u, c in zip(unique, counts)}, float(bits_vec.float().mean().item())
+                channels, bits_channels_sum = bits_vec.numel(), float(bits_vec.sum().item())
                 processed_modules.add(id(base_module))
             else:
                 hist, avg_bits = {32: 1}, 32.0
+                channels, bits_channels_sum = int(w.size(0)), float(w.size(0)) * 32.0
 
             bits_total = int(params * avg_bits)
             effective_bops = bops * (avg_bits / 32.0)
@@ -600,6 +603,8 @@ def collect_bit_distribution(model: nn.Module, bops_map: Dict[str, float]):
             total_params += params
             total_bits += bits_total
             total_params_fp32_bits += params * 32
+            total_channels += channels
+            total_bits_channels += bits_channels_sum
 
     totals = {
         "total_params": int(total_params), "total_bits": int(total_bits),
@@ -610,6 +615,7 @@ def collect_bit_distribution(model: nn.Module, bops_map: Dict[str, float]):
         "total_gops": total_bops / 1e9,
         "total_effective_gops": total_effective_bops / 1e9,
         "avg_bits_model": float(total_bits / max(1, total_params)),
+        "avg_bits_channel": float(total_bits_channels / max(1, total_channels)),
     }
     return layer_rows, totals
 
