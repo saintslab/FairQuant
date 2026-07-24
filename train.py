@@ -189,9 +189,9 @@ def evaluate(model, loader, device, num_groups: int, num_classes: int, positive_
 
 def main():
     parser = argparse.ArgumentParser(description="FairQuant: Fairness-Aware Quantization")
-    parser.add_argument("--dataset", type=str, default="fitzpatrick17k", choices=["celeba", "fitzpatrick17k", "isic2019"])
-    parser.add_argument("--target_attribute", type=str, default="Blond_Hair", help="The target attribute for CelebA classification.")
-    parser.add_argument("--sensitive_attribute", type=str, default="Male", help="The sensitive attribute for CelebA fairness analysis.")
+    parser.add_argument("--dataset", type=str, default="fitzpatrick17k", choices=["celeba", "fitzpatrick17k", "isic2019", "fairface"])
+    parser.add_argument("--target_attribute", type=str, default="Blond_Hair", help="The target attribute for CelebA classification, or 'age'/'gender' for FairFace.")
+    parser.add_argument("--sensitive_attribute", type=str, default="Male", help="The sensitive attribute for CelebA fairness analysis, or 'race' for FairFace.")
     parser.add_argument("--fitzpatrick_binary_grouping", action="store_true", help="If set, groups Fitzpatrick17k into light (1-3) and dark (4-6) skin tones.")
     parser.add_argument("--data_root", type=str, default="./data")
     parser.add_argument(

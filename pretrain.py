@@ -15,9 +15,9 @@ from train import train_one_epoch, evaluate
 def main():
     parser = argparse.ArgumentParser(description="Pre-train a full-precision model based on FairPrune paper.")
     parser.add_argument("--dataset", type=str, default="fitzpatrick17k",
-                        choices=["celeba", "fitzpatrick17k", "isic2019"])
-    parser.add_argument("--target_attribute", type=str, default="Blond_Hair", help="The target attribute for CelebA classification.")
-    parser.add_argument("--sensitive_attribute", type=str, default="Male", help="The sensitive attribute for CelebA fairness analysis.")
+                        choices=["celeba", "fitzpatrick17k", "isic2019", "fairface"])
+    parser.add_argument("--target_attribute", type=str, default="Blond_Hair", help="The target attribute for CelebA classification, or 'age'/'gender' for FairFace.")
+    parser.add_argument("--sensitive_attribute", type=str, default="Male", help="The sensitive attribute for CelebA fairness analysis, or 'race' for FairFace.")
     parser.add_argument("--fitzpatrick_binary_grouping", action="store_true", help="If set, groups Fitzpatrick17k into light (1-3) and dark (4-6) skin tones.")
     parser.add_argument("--data_root", type=str, default="data")
     parser.add_argument(
@@ -127,7 +127,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     filename_suffix = ""
-    if args.dataset == "celeba":
+    if args.dataset in ("celeba", "fairface"):
         filename_suffix = f"_{args.target_attribute}"
     elif args.dataset == "fitzpatrick17k" and args.fitzpatrick_binary_grouping:
         filename_suffix = "_binary"

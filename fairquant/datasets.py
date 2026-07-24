@@ -354,6 +354,91 @@ def _fitzpatrick17k_loaders(
 
     return train_loader, test_loader, len(labels), labels, len(group_names), group_names
 
+class HFAttrDataset(Dataset):
+    """Wraps a Hugging Face `datasets.Dataset` split, exposing (image, target, group) triples."""
+
+    def __init__(self, hf_split, target_attribute: str, sensitive_attribute: str, transform):
+        self.hf_split = hf_split
+        self.target_attribute = target_attribute
+        self.sensitive_attribute = sensitive_attribute
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.hf_split)
+
+    def __getitem__(self, idx):
+        row = self.hf_split[idx]
+        img = self.transform(row["image"].convert("RGB"))
+        return img, int(row[self.target_attribute]), int(row[self.sensitive_attribute])
+
+
+def _fairface_loaders(
+    data_root: str,
+    batch_size: int,
+    image_size: int,
+    num_workers: int,
+    train_subset,
+    test_subset,
+    pin_memory: bool,
+    target_attribute: str,
+    sensitive_attribute: str,
+):
+    try:
+        import datasets as hf_datasets
+    except ImportError as e:
+        raise RuntimeError(
+            "FairFace requires the Hugging Face 'datasets' library. Install it with 'pip install datasets'."
+        ) from e
+
+    available_attrs = ["age", "gender", "race"]
+    if target_attribute not in available_attrs or sensitive_attribute not in available_attrs:
+        raise ValueError(
+            f"FairFace target/sensitive attribute must be one of {available_attrs}; "
+            f"got target='{target_attribute}', sensitive='{sensitive_attribute}'"
+        )
+
+    cache_dir = os.path.join(data_root, "fairface_hf_cache")
+    logging.info(f"Loading FairFace from Hugging Face (HuggingFaceM4/FairFace, padding=0.25) into '{cache_dir}'...")
+    hf_ds = hf_datasets.load_dataset("HuggingFaceM4/FairFace", "0.25", cache_dir=cache_dir)
+
+    target_names = hf_ds["train"].features[target_attribute].names
+    group_names = hf_ds["train"].features[sensitive_attribute].names
+
+    logging.info(
+        f"Using FairFace dataset. Target: '{target_attribute}' ({len(target_names)} classes), "
+        f"Sensitive: '{sensitive_attribute}' ({len(group_names)} groups)."
+    )
+
+    train_transform = T.Compose(
+        [
+            T.Resize((image_size, image_size)),
+            T.RandomHorizontalFlip(),
+            T.RandomRotation(15),
+            T.AutoAugment(T.AutoAugmentPolicy.IMAGENET),
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    )
+    test_transform = T.Compose(
+        [
+            T.Resize((image_size, image_size)),
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    )
+
+    train_ds = HFAttrDataset(hf_ds["train"], target_attribute, sensitive_attribute, train_transform)
+    test_ds = HFAttrDataset(hf_ds["validation"], target_attribute, sensitive_attribute, test_transform)
+
+    train_ds = _apply_subset(train_ds, train_subset)
+    test_ds = _apply_subset(test_ds, test_subset)
+
+    train_loader = DataLoader(train_ds, batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    test_loader = DataLoader(test_ds, batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+
+    return train_loader, test_loader, len(target_names), target_names, len(group_names), group_names
+
+
 def _canonicalize_isic2019_dir(data_root: str) -> str:
     canonical = os.path.join(data_root, "ISIC2019_train")
     alt = os.path.join(data_root, "ISIC_2019_train")
@@ -557,5 +642,9 @@ def get_dataloaders(
         return _isic2019_loaders(
             data_root, batch_size, image_size, num_workers, train_subset, test_subset, pin_memory
         )
+    elif dataset == "fairface":
+        return _fairface_loaders(
+            data_root, batch_size, image_size, num_workers, train_subset, test_subset, pin_memory, target_attribute, sensitive_attribute
+        )
     else:
-        raise ValueError(f"Unknown dataset '{dataset}'. Choices: celeba, fitzpatrick17k, isic2019")
+        raise ValueError(f"Unknown dataset '{dataset}'. Choices: celeba, fitzpatrick17k, isic2019, fairface")
