@@ -94,7 +94,7 @@ def parse_size_report(path):
     return out
 
 
-_KNOWN_DATASETS = ["fitzpatrick17k", "isic2019", "celeba"]
+_KNOWN_DATASETS = ["fitzpatrick17k", "isic2019", "celeba", "fairface"]
 
 
 def infer_dataset(name, run_args):

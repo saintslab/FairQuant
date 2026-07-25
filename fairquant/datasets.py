@@ -544,28 +544,30 @@ def _isic2019_loaders(
     def label_for_row(r):
         return int(max(range(len(class_names)), key=lambda i: float(r[class_names[i]])))
 
-    # Group by sex from metadata (if present)
-    group_names = ["UNK", "female", "male"]
-    group_to_idx = {"UNK": 0, "female": 1, "male": 2}
+    # Group by sex from metadata. Images with unknown/missing sex are dropped so the
+    # sensitive attribute stays strictly binary (female/male) -- required by reducers
+    # (e.g. FairQuantize's 'subtractive') that assume exactly two privileged/unprivileged groups.
+    group_names = ["female", "male"]
+    group_to_idx = {"female": 0, "male": 1}
 
     sex_map = {}
     if os.path.isfile(meta_csv):
         with open(meta_csv, "r") as f:
             for r in csv.DictReader(f):
-                sex = (r.get("sex", "UNK") or "UNK").lower()
+                sex = (r.get("sex") or "").lower()
                 img_id = r.get("image")
-                if img_id:
-                    sex_map[img_id] = group_to_idx.get(sex if sex in group_names else "UNK")
+                if img_id and sex in group_to_idx:
+                    sex_map[img_id] = group_to_idx[sex]
 
-    # Build items (path, label, group)
+    # Build items (path, label, group), skipping images with unknown sex
     all_items = []
     for r in gt_rows:
         img_id = r.get("image")
-        if not img_id:
+        if not img_id or img_id not in sex_map:
             continue
         p = os.path.join(in_dir, img_id + ".jpg")
         if os.path.isfile(p):
-            all_items.append((p, label_for_row(r), sex_map.get(img_id, group_to_idx["UNK"])))
+            all_items.append((p, label_for_row(r), sex_map[img_id]))
 
     if not all_items:
         example_files = []

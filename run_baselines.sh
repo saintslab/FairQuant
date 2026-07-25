@@ -22,7 +22,7 @@ QUANT_LEVELS="${QUANT_LEVELS:-0.2 0.4 0.4}"
 FT_EPOCHS="${FT_EPOCHS:-10}"
 BETA="${BETA:-1.0}"
 HAWQ_HUTCHINSON_SAMPLES="${HAWQ_HUTCHINSON_SAMPLES:-10}"
-SEEDS=(2 42 107 1337 2026)
+SEEDS=(2 42 107 1337 206)
 
 LOG_DIR="${LOG_DIR:-./logs}"
 mkdir -p "$LOG_DIR"
@@ -30,6 +30,9 @@ mkdir -p "$LOG_DIR"
 COMMON=(--dataset "$DATASET" --model "$MODEL" --checkpoint_path "$CHECKPOINT" --granularity "$GRANULARITY")
 if [[ "$DATASET" == "fitzpatrick17k" ]]; then
     COMMON+=(--fitzpatrick_binary_grouping)
+elif [[ "$DATASET" == "fairface" ]]; then
+    FAIRFACE_TARGET="${FAIRFACE_TARGET:-age}"
+    COMMON+=(--target_attribute "$FAIRFACE_TARGET" --sensitive_attribute race)
 fi
 
 run() {
@@ -60,11 +63,14 @@ run "${COMMON[@]}" --quant_mode fair_static_qat \
     --quant_bits $QUANT_BITS --quant_levels $QUANT_LEVELS --ft_epochs "$FT_EPOCHS" \
     --run_name "${PREFIX}_fairquantize"
 
+
+: <<'COMMENT'
 # --- HAWQ (Hutchinson-trace Hessian importance, not fairness-aware) ---
 run "${COMMON[@]}" --quant_mode fair_static_qat \
     --importance_metric hawq --reducer max --hawq_hutchinson_samples "$HAWQ_HUTCHINSON_SAMPLES" \
     --quant_bits $QUANT_BITS --quant_levels $QUANT_LEVELS --ft_epochs "$FT_EPOCHS" \
     --run_name "${PREFIX}_hawq"
+COMMENT
 
 # --- FQ-QAT: FairQuant one-shot static assignment + QAT fine-tuning ---
 for seed in "${SEEDS[@]}"; do
