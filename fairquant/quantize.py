@@ -5,6 +5,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 import logging
+from contextlib import nullcontext
+
+try:
+    from torch.nn.attention import sdpa_kernel, SDPBackend
+    def _math_sdpa_context():
+        # Fused/flash/efficient scaled_dot_product_attention kernels don't implement a
+        # second derivative, which HAWQ's Hutchinson trace estimator needs (it double-
+        # backprops through the loss to get Hessian-vector products). The unfused math
+        # kernel does support double backward, so force it just for this computation.
+        return sdpa_kernel(SDPBackend.MATH)
+except ImportError:
+    def _math_sdpa_context():
+        return nullcontext()
 
 def _iter_target_named_modules(model: nn.Module):
     for name, m in model.named_modules():
@@ -162,23 +175,27 @@ def compute_groupwise_importance_hawq(
         for g in loop_over_groups:
             if g not in importance: importance[g] = _zero_like_params(model)
 
-        logits = model(images)
-        params = [m.weight for _, m in target_modules]
-        for j, g in enumerate(loop_over_groups):
-            mask = (group_tensor == g)
-            if mask.sum().item() == 0: continue
-            loss = criterion(logits[mask], targets[mask])
-
-            for s in range(hutchinson_samples):
-                is_last = (j == len(loop_over_groups) - 1) and (s == hutchinson_samples - 1)
+        with _math_sdpa_context():
+            logits = model(images)
+            params = [m.weight for _, m in target_modules]
+            for j, g in enumerate(loop_over_groups):
+                mask = (group_tensor == g)
+                if mask.sum().item() == 0: continue
+                loss = criterion(logits[mask], targets[mask])
+                # First-order grads don't depend on the Rademacher sample v, so compute them
+                # once per group and reuse across hutchinson_samples instead of redoing the
+                # first backward every sample (previously ~doubled the cost for no reason).
                 first_grads = torch.autograd.grad(loss, params, create_graph=True, retain_graph=True)
-                vs = [torch.empty_like(p).bernoulli_(0.5).mul_(2).sub_(1) for p in params]
-                gv = torch.stack([(fg * v).sum() for fg, v in zip(first_grads, vs)]).sum()
-                hvps = torch.autograd.grad(gv, params, retain_graph=not is_last)
 
-                for name, p, v, hv in zip(names, params, vs, hvps):
-                    diag_est = (v * hv).detach().abs()
-                    importance[g][name].add_(diag_est * p.detach().pow(2))
+                for s in range(hutchinson_samples):
+                    is_last = (j == len(loop_over_groups) - 1) and (s == hutchinson_samples - 1)
+                    vs = [torch.empty_like(p).bernoulli_(0.5).mul_(2).sub_(1) for p in params]
+                    gv = torch.stack([(fg * v).sum() for fg, v in zip(first_grads, vs)]).sum()
+                    hvps = torch.autograd.grad(gv, params, retain_graph=not is_last)
+
+                    for name, p, v, hv in zip(names, params, vs, hvps):
+                        diag_est = (v * hv).detach().abs()
+                        importance[g][name].add_(diag_est * p.detach().pow(2))
 
         seen_count += images.size(0)
         if seen_count >= total_samples_to_see: break

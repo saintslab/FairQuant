@@ -220,13 +220,14 @@ BAQ learnable:
 ```
 
 Runs the full comparison suite for one pretrained model/dataset against a shared `--quant_bits 2 4 8
---quant_levels 0.2 0.4 0.4` budget (`QUANT_BITS`/`QUANT_LEVELS` env vars to override) and `--ft_epochs 10`:
+--quant_levels 0.2 0.4 0.4` budget (`QUANT_BITS`/`QUANT_LEVELS` env vars to override) and `--ft_epochs 10`,
+except `fairgrape` which uses its own prune-style budget (see below):
 
 | Run | `--importance_metric` | `--reducer` | `--fairness_loss_lambda` | Notes |
 |---|---|---|---|---|
 | `fp32` | — | — | — | Optional fine-tune only |
 | `uniform4` / `uniform8` | — | — | — | No fine-tuning |
-| `fairgrape` | `grape` | `max` | — | Reproduces Lin et al. |
+| `fairgrape` | `grape` | `max` | — | Inspired by Lin et al.; matches their `(gw·w)^2` importance signal, but approximates their greedy per-layer round-robin pruning with one-shot importance-guided pruning (`--quant_bits 0 32`, `FAIRGRAPE_PRUNE_RATIO` default `0.8`) since the original's layer-by-layer, group-round-robin weight selection isn't implemented |
 | `fairquantize` | `grape` | `subtractive` (`--beta`) | — | Reproduces Guo et al.; requires exactly 2 sensitive groups |
 | `fq_qat` (5 seeds) | `grape` | `balanced` | `0.5` | This repo's static mixed-precision method |
 | `fq_baq` (5 seeds) | `grape` (warm start only) | `balanced` | `0.5` | Learnable bit-widths, range `[2, 8]` |
