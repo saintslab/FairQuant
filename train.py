@@ -147,7 +147,7 @@ def train_one_epoch(model, loader, device, criterion, optimizer,
         
         total_loss = criterion(logits, y)
 
-        if quant_mode in ('baq_learnable') and fairness_loss_lambda > 0:
+        if quant_mode in ('baq_learnable', 'fair_static_qat') and fairness_loss_lambda > 0:
             groups = g.to(device)
             unique_groups = torch.unique(groups).tolist()
             if len(unique_groups) >= 2:
@@ -195,13 +195,13 @@ def main():
     parser.add_argument("--fitzpatrick_binary_grouping", action="store_true", help="If set, groups Fitzpatrick17k into light (1-3) and dark (4-6) skin tones.")
     parser.add_argument("--data_root", type=str, default="./data")
     parser.add_argument(
-        "--model", 
-        type=str, 
+        "--model",
+        type=str,
         default="resnet18",
-        choices=["resnet18", "resnet34", "resnet50", "vgg11","vgg16", "vgg19", "tiny_vit_5m_224", "deit_tiny_patch16_224"]
+        help="Model name. Supports torchvision and timm models (e.g., hiera_base_224.mae_in1k_ft_in1k)."
     )
     parser.add_argument("--epochs", type=int, default=1, help="Epochs for initial pre-training if no checkpoint is provided.")
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--batch_size", type=int, default=None, help="Defaults to 128, or 64 for hiera models (to avoid GPU OOM).")
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--image_size", type=int, default=224)
     parser.add_argument("--num_workers", type=int, default=0)
@@ -247,6 +247,9 @@ def main():
         args.target_attribute = _DEFAULT_TARGET_ATTR.get(args.dataset)
     if args.sensitive_attribute is None:
         args.sensitive_attribute = _DEFAULT_SENSITIVE_ATTR.get(args.dataset)
+
+    if args.batch_size is None:
+        args.batch_size = 64 if "hiera" in args.model.lower() else 128
 
     print(f"Setting random seed to: {args.seed}")
     set_seed(args.seed)
@@ -425,7 +428,11 @@ def main():
                 ft_lr = args.ft_lr if args.ft_lr is not None else args.lr
                 optimizer = AdamW(model.parameters(), lr=ft_lr * 0.1)
                 for epoch in range(args.ft_epochs):
-                    train_one_epoch(model, train_loader, device, criterion, optimizer)
+                    train_one_epoch(
+                        model, train_loader, device, criterion, optimizer,
+                        fairness_loss_lambda=args.fairness_loss_lambda, quant_mode=args.quant_mode,
+                        grad_clip_norm=args.grad_clip_norm,
+                    )
                     val_loss, val_groups = evaluate(model, test_loader, device, num_groups, num_classes, args.positive_class, not args.no_parity_gaps)
                     logging.info(f"\n--- [QAT Epoch {epoch+1}/{args.ft_epochs}] ---")
                     log_evaluation_details(val_groups, group_names, args.positive_class, val_loss)
@@ -465,13 +472,15 @@ def main():
         
         ft_lr = args.ft_lr if args.ft_lr is not None else args.lr
         optimizer = AdamW([
-            {"params": base_params},  # Group 0: Base parameters use the standard ft_lr
-            {"params": baq_params, "lr": ft_lr * 10}  # Group 1: BAQ logits get a 10x higher LR
-        ], lr=ft_lr)
+            # Weights use the same 0.1x-scaled fine-tune LR as the FP32 and FQ-QAT paths
+            # (paper: "same ... learning-rate policy as the full-precision run").
+            {"params": base_params, "lr": ft_lr * 0.1},
+            {"params": baq_params, "lr": ft_lr * 10}  # Group 1: BAQ logits get a separately-tuned, higher LR
+        ], lr=ft_lr * 0.1)
 
         logging.info("Starting fine-tuning for BAQ learnable quantization...")
         
-        d_logits, b_logits = collect_baq_regularization_params(model)
+        d_logits, b_logits, b_logit_inits = collect_baq_regularization_params(model)
 
         for epoch in range(args.ft_epochs):
             model.train()
@@ -497,7 +506,11 @@ def main():
                     total_loss += args.baq_lambda_d * d_reg_loss
 
                 if args.baq_lambda_b > 0 and b_logits:
-                    b_reg_loss = torch.cat([p.pow(2).flatten() for p in b_logits]).mean()
+                    # Pull back toward the importance-informed init, not toward 0 (which always
+                    # maps to bit_min via forward()'s abs(b_logit)) -- see BAQModule.b_logit_init.
+                    b_reg_loss = torch.cat([
+                        (p - p_init).pow(2).flatten() for p, p_init in zip(b_logits, b_logit_inits)
+                    ]).mean()
                     total_loss += args.baq_lambda_b * b_reg_loss
             
 

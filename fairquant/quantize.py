@@ -425,14 +425,13 @@ class BAQModule(nn.Module):
         self.d_logit = nn.Parameter(torch.full(param_shape, -6.0))
         self.b_logit = nn.Parameter(torch.full(param_shape, 6.0))
 
-
         if initial_bit is not None:
             initial_bit_tensor = torch.as_tensor(initial_bit, dtype=torch.float32)
 
             if not torch.all((self.bit_min <= initial_bit_tensor) & (initial_bit_tensor <= self.bit_max)):
                 logging.warning(f"Initial bit(s) for BAQ are outside the allowed range [{self.bit_min}, {self.bit_max}]. Clamping.")
                 initial_bit_tensor = torch.clamp(initial_bit_tensor, self.bit_min, self.bit_max)
-            
+
             if self.bit_max > self.bit_min:
                 val_for_atanh = (initial_bit_tensor - self.bit_min) / (self.bit_max - self.bit_min)
                 # Keep away from +/-1: atanh blows up and tanh's gradient vanishes near there,
@@ -441,6 +440,12 @@ class BAQModule(nn.Module):
 
                 with torch.no_grad():
                     self.b_logit.copy_(torch.atanh(val_for_atanh))
+
+        # Frozen snapshot of the importance-informed starting point. baq_lambda_b regularizes
+        # b_logit back toward this instead of toward 0, since 0 always maps to bit_min (forward()
+        # takes abs(b_logit)) and would otherwise pull every channel to the floor regardless of
+        # its importance, defeating the point of the informed initialization.
+        self.register_buffer("b_logit_init", self.b_logit.detach().clone())
 
 
     def hard_bits(self) -> torch.Tensor:
@@ -496,13 +501,14 @@ class BAQModule(nn.Module):
         else:
             return F.linear(x, w_quantized, self.base.bias)
 
-def collect_baq_regularization_params(model: nn.Module) -> tuple[List[nn.Parameter], List[nn.Parameter]]:
-    d_logits, b_logits = [], []
+def collect_baq_regularization_params(model: nn.Module) -> tuple[List[nn.Parameter], List[nn.Parameter], List[torch.Tensor]]:
+    d_logits, b_logits, b_logit_inits = [], [], []
     for m in model.modules():
         if isinstance(m, BAQModule):
             d_logits.append(m.d_logit)
             b_logits.append(m.b_logit)
-    return d_logits, b_logits
+            b_logit_inits.append(m.b_logit_init)
+    return d_logits, b_logits, b_logit_inits
 
 def apply_baq_quantization(model: nn.Module, bit_min: int, bit_max: int, granularity: str, initial_assignment: Optional[Dict[str, torch.Tensor]] = None) -> nn.Module:
     for name, m in list(model.named_modules()):

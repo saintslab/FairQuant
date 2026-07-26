@@ -28,7 +28,7 @@ def main():
         help="Model name. Supports torchvision and timm models (e.g., tiny_vit_5m_224)."
     )
     parser.add_argument("--epochs", type=int, default=200, help="")
-    parser.add_argument("--batch_size", type=int, default=128, help="")
+    parser.add_argument("--batch_size", type=int, default=None, help="Defaults to 128, or 64 for hiera models (to avoid GPU OOM).")
     parser.add_argument("--lr", type=float, default=1e-4, help="")
     parser.add_argument("--image_size", type=int, default=224, help="")
     parser.add_argument("--num_workers", type=int, default=0)
@@ -52,6 +52,9 @@ def main():
         args.target_attribute = _DEFAULT_TARGET_ATTR.get(args.dataset)
     if args.sensitive_attribute is None:
         args.sensitive_attribute = _DEFAULT_SENSITIVE_ATTR.get(args.dataset)
+
+    if args.batch_size is None:
+        args.batch_size = 64 if "hiera" in args.model.lower() else 128
 
     set_seed(42)
     device = torch.device(args.device)
